@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -224,6 +225,7 @@ As of **February 6, 2026**, here’s the practical comparison:
 		t.Fatalf("unable to read typescript output: %v", err)
 	}
 	got := string(typescript)
+	got = normalizePTYOutput(got)
 
 	sentinel := "Searched: OpenAI Codex GPT-5 model documentation"
 	if c := strings.Count(got, sentinel); c != 1 {
@@ -233,4 +235,15 @@ As of **February 6, 2026**, here’s the practical comparison:
 	if c := strings.Count(got, heading); c != 1 {
 		t.Fatalf("expected heading %q exactly once, got %d", heading, c)
 	}
+}
+
+func normalizePTYOutput(s string) string {
+	// Remove CR inserted by PTY logging.
+	s = strings.ReplaceAll(s, "\r", "")
+	// Strip CSI and OSC ANSI escape sequences.
+	csi := regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+	s = csi.ReplaceAllString(s, "")
+	osc := regexp.MustCompile(`\x1b\][^\x07]*\x07`)
+	s = osc.ReplaceAllString(s, "")
+	return s
 }
