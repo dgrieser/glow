@@ -63,14 +63,12 @@ func executeStreamCLI(src *source, w io.Writer) error {
 		if err != nil {
 			return err
 		}
+		rendered = normalizeStreamOutput(rendered)
 		if rendered == lastRendered {
 			return nil
 		}
 
-		delta := rendered
-		if strings.HasPrefix(rendered, lastRendered) {
-			delta = rendered[len(lastRendered):]
-		}
+		delta := streamDelta(lastRendered, rendered)
 		if delta == "" {
 			return nil
 		}
@@ -96,6 +94,11 @@ func executeStreamCLI(src *source, w io.Writer) error {
 			if chunk.eof {
 				if err := emit(true); err != nil {
 					return err
+				}
+				if lastRendered != "" {
+					if _, err := io.WriteString(w, "\n\n"); err != nil {
+						return fmt.Errorf("unable to write stream output: %w", err)
+					}
 				}
 				return nil
 			}
@@ -144,9 +147,7 @@ func renderStreamSnapshot(content string, layouts *streamTableLayouts, final boo
 		glamour.WithColorProfile(lipgloss.ColorProfile()),
 		utils.GlamourStyle(style, false),
 		glamour.WithWordWrap(int(width)), //nolint:gosec
-	}
-	if preserveNewLines {
-		options = append(options, glamour.WithPreservedNewLines())
+		glamour.WithPreservedNewLines(),
 	}
 	r, err := glamour.NewTermRenderer(options...)
 	if err != nil {
@@ -158,6 +159,41 @@ func renderStreamSnapshot(content string, layouts *streamTableLayouts, final boo
 		return "", fmt.Errorf("unable to render markdown: %w", err)
 	}
 	return out, nil
+}
+
+func normalizeStreamOutput(s string) string {
+	if s == "" {
+		return s
+	}
+
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t")
+	}
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
+}
+
+func streamDelta(prev, next string) string {
+	if prev == "" {
+		return next
+	}
+	if strings.HasPrefix(next, prev) {
+		return next[len(prev):]
+	}
+
+	limit := min(len(prev), len(next))
+	i := 0
+	for i < limit && prev[i] == next[i] {
+		i++
+	}
+
+	// Keep append-only chunks aligned to full lines.
+	if j := strings.LastIndex(next[:i], "\n"); j >= 0 {
+		i = j + 1
+	} else {
+		i = 0
+	}
+	return next[i:]
 }
 
 func preprocessStreamMarkdown(content string, layouts *streamTableLayouts, final bool) string {
@@ -173,6 +209,31 @@ func preprocessStreamMarkdown(content string, layouts *streamTableLayouts, final
 	lines := strings.Split(processable, "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
+	}
+	if !final && len(lines) > 0 {
+		// Emit only up to the most recent blank-line boundary when possible.
+		// This keeps block-level markdown (lists, paragraphs, headings) from
+		// retroactively changing already-emitted output in stream mode.
+		commitCount := 0
+		for i := len(lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(lines[i]) == "" {
+				commitCount = i + 1
+				break
+			}
+		}
+
+		if commitCount == 0 {
+			// Fallback for continuous logs without blank lines: keep one line
+			// buffered to reduce churn from multi-line constructs.
+			commitCount = len(lines) - 1
+			if commitCount > 0 && isSetextUnderlineLine(lines[commitCount-1]) {
+				commitCount--
+			}
+		}
+		if commitCount < 0 {
+			commitCount = 0
+		}
+		lines = lines[:commitCount]
 	}
 	var b strings.Builder
 	tableIdx := 0
@@ -192,11 +253,9 @@ func preprocessStreamMarkdown(content string, layouts *streamTableLayouts, final
 
 			rows := make([][]string, 0)
 			j := i + 2
-			tableEnded := false
 			for j < len(lines) {
 				line := lines[j]
 				if !isTableRowLine(line) {
-					tableEnded = true
 					break
 				}
 				rows = append(rows, parseTableCells(line))
@@ -204,9 +263,6 @@ func preprocessStreamMarkdown(content string, layouts *streamTableLayouts, final
 			}
 
 			committedRows := len(rows)
-			if !final && !tableEnded && committedRows > 0 {
-				committedRows--
-			}
 
 			if committedRows > 0 {
 				b.WriteString("```text\n")
@@ -403,6 +459,23 @@ func isTableRowLine(s string) bool {
 		return false
 	}
 	return strings.Contains(trimmed, "|")
+}
+
+func isSetextUnderlineLine(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if len(trimmed) < 3 {
+		return false
+	}
+	ch := trimmed[0]
+	if ch != '=' && ch != '-' {
+		return false
+	}
+	for i := 1; i < len(trimmed); i++ {
+		if trimmed[i] != ch {
+			return false
+		}
+	}
+	return true
 }
 
 func parseTableCells(line string) []string {
