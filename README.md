@@ -143,12 +143,17 @@ glow README.md
 # Read from stdin
 echo "[Glow](https://github.com/charmbracelet/glow)" | glow -
 
+# Stream from stdin (append-only output)
+your-markdown-generator | glow --stream -
+
 # Fetch README from GitHub / GitLab
 glow github.com/charmbracelet/glow
 
 # Fetch markdown from HTTP
 glow https://host.tld/file.md
 ```
+
+`--stream` is append-only and log-friendly. Tables use fixed column widths per table; long cells wrap to additional lines instead of changing column widths mid-stream.
 
 ### Word Wrapping
 

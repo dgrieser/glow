@@ -27,6 +27,12 @@ func TestGlowFlags(t *testing.T) {
 				return width == 40
 			},
 		},
+		{
+			args: []string{"--stream"},
+			check: func() bool {
+				return stream
+			},
+		},
 	}
 
 	for _, v := range tt {

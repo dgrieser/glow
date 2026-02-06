@@ -42,6 +42,7 @@ var (
 	showLineNumbers  bool
 	preserveNewLines bool
 	mouse            bool
+	stream           bool
 
 	rootCmd = &cobra.Command{
 		Use:   "glow [SOURCE|DIR]",
@@ -175,6 +176,12 @@ func validateOptions(cmd *cobra.Command) error {
 	if pager && tui {
 		return errors.New("cannot use both pager and tui")
 	}
+	if stream && pager {
+		return errors.New("cannot use both stream and pager")
+	}
+	if stream && tui {
+		return errors.New("cannot use both stream and tui")
+	}
 
 	// validate the glamour style
 	style = viper.GetString("style")
@@ -220,6 +227,27 @@ func stdinIsPipe() (bool, error) {
 }
 
 func execute(cmd *cobra.Command, args []string) error {
+	if stream {
+		if len(args) > 1 {
+			return errors.New("stream mode accepts only stdin as source")
+		}
+		if len(args) == 1 && args[0] != "-" {
+			return errors.New("stream mode requires stdin ('-' or piped input)")
+		}
+		if len(args) == 0 {
+			yes, err := stdinIsPipe()
+			if err != nil {
+				return err
+			}
+			if !yes {
+				return errors.New("stream mode requires stdin ('-' or piped input)")
+			}
+		}
+		src := &source{reader: os.Stdin}
+		defer src.reader.Close() //nolint:errcheck
+		return executeStreamCLI(src, os.Stdout)
+	}
+
 	// if stdin is a pipe then use stdin for input. note that you can also
 	// explicitly use a - to read from stdin.
 	if yes, err := stdinIsPipe(); err != nil {
@@ -403,6 +431,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&showLineNumbers, "line-numbers", "l", false, "show line numbers (TUI-mode only)")
 	rootCmd.Flags().BoolVarP(&preserveNewLines, "preserve-new-lines", "n", false, "preserve newlines in the output")
 	rootCmd.Flags().BoolVarP(&mouse, "mouse", "m", false, "enable mouse wheel (TUI-mode only)")
+	rootCmd.Flags().BoolVar(&stream, "stream", false, "stream markdown from stdin to stdout (append-only; fixed-width table rendering)")
 	_ = rootCmd.Flags().MarkHidden("mouse")
 
 	// Config bindings
@@ -415,6 +444,7 @@ func init() {
 	_ = viper.BindPFlag("preserveNewLines", rootCmd.Flags().Lookup("preserve-new-lines"))
 	_ = viper.BindPFlag("showLineNumbers", rootCmd.Flags().Lookup("line-numbers"))
 	_ = viper.BindPFlag("all", rootCmd.Flags().Lookup("all"))
+	_ = viper.BindPFlag("stream", rootCmd.Flags().Lookup("stream"))
 
 	viper.SetDefault("style", styles.AutoStyle)
 	viper.SetDefault("width", 0)
