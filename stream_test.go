@@ -50,22 +50,19 @@ func TestStreamTableLayoutFitsTerminalWidth(t *testing.T) {
 	}
 }
 
-func TestPreprocessBuffersLastStreamingRow(t *testing.T) {
+func TestPreprocessStreamsTableRowsAsTheyArrive(t *testing.T) {
 	layouts := newStreamTableLayouts()
 
-	first := "| id | note |\n| --- | --- |\n| 1 | hello world |\n"
+	first := "\n| id | note |\n| --- | --- |\n| 1 | hello world |\n"
 	out := preprocessStreamMarkdown(first, layouts, false)
-	if strings.Contains(out, "hello world") {
-		t.Fatalf("expected last row to stay buffered, output:\n%s", out)
+	if !strings.Contains(out, "hello") || !strings.Contains(out, "world") {
+		t.Fatalf("expected first row to be emitted immediately, output:\n%s", out)
 	}
 
 	second := first + "| 2 | second row |\n"
 	out = preprocessStreamMarkdown(second, layouts, false)
-	if !strings.Contains(out, "hello") || !strings.Contains(out, "world") {
-		t.Fatalf("expected first row to be emitted after second row arrives, output:\n%s", out)
-	}
-	if strings.Contains(out, "second row") {
-		t.Fatalf("expected newest row to stay buffered, output:\n%s", out)
+	if !strings.Contains(out, "second") || !strings.Contains(out, "row") {
+		t.Fatalf("expected second row to be emitted immediately, output:\n%s", out)
 	}
 }
 

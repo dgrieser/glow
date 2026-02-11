@@ -295,6 +295,14 @@ func preprocessStreamMarkdown(content string, layouts *streamTableLayouts, final
 				commitCount--
 			}
 		}
+		// Stream table rows as they arrive once a table block has started.
+		// Table rows are converted to fixed-width text lines, so completed
+		// rows can be emitted immediately without changing prior lines.
+		if commitCount < len(lines) {
+			if n := committedTablePrefixLen(lines[commitCount:]); n > 0 {
+				commitCount += n
+			}
+		}
 		if commitCount < 0 {
 			commitCount = 0
 		}
@@ -541,6 +549,21 @@ func isSetextUnderlineLine(s string) bool {
 		}
 	}
 	return true
+}
+
+func committedTablePrefixLen(lines []string) int {
+	if len(lines) < 2 {
+		return 0
+	}
+	if !isTableHeaderLine(lines[0]) || !isTableSeparatorLine(lines[1]) {
+		return 0
+	}
+
+	n := 2
+	for n < len(lines) && isTableRowLine(lines[n]) {
+		n++
+	}
+	return n
 }
 
 func parseTableCells(line string) []string {
