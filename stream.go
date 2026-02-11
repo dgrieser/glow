@@ -17,6 +17,7 @@ import (
 const (
 	streamRenderInterval = 200 * time.Millisecond
 	streamMinColWidth    = 12
+	streamTablePadWidth  = 4
 )
 
 type streamChunk struct {
@@ -42,8 +43,72 @@ func (s *streamTableLayouts) layout(tableIdx int, headers []string) []int {
 	for i, h := range headers {
 		widths[i] = max(streamMinColWidth, runewidth.StringWidth(strings.TrimSpace(h))+2)
 	}
+	widths = fitTableWidths(widths, streamTableLineBudget())
 	s.widthsByTable[tableIdx] = widths
 	return widths
+}
+
+func streamTableLineBudget() int {
+	budget := int(width) - streamTablePadWidth
+	if budget < 20 {
+		return 20
+	}
+	return budget
+}
+
+func fitTableWidths(widths []int, lineBudget int) []int {
+	if len(widths) == 0 || lineBudget <= 0 {
+		return widths
+	}
+
+	const minWidth = 3 // 1-char content + 2 spaces in each column.
+
+	out := append([]int(nil), widths...)
+	for i, w := range out {
+		if w < minWidth {
+			out[i] = minWidth
+		}
+	}
+
+	rowWidth := func(cols []int) int {
+		total := len(cols) + 1 // left and right edges + separators.
+		for _, w := range cols {
+			total += w
+		}
+		return total
+	}
+
+	total := rowWidth(out)
+	if total <= lineBudget {
+		return out
+	}
+
+	minTotal := len(out)*minWidth + len(out) + 1
+	if minTotal >= lineBudget {
+		for i := range out {
+			out[i] = minWidth
+		}
+		return out
+	}
+
+	need := total - lineBudget
+	for need > 0 {
+		idx := -1
+		widest := minWidth
+		for i, w := range out {
+			if w > widest {
+				widest = w
+				idx = i
+			}
+		}
+		if idx < 0 {
+			break
+		}
+		out[idx]--
+		need--
+	}
+
+	return out
 }
 
 func executeStreamCLI(src *source, w io.Writer) error {

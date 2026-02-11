@@ -29,6 +29,27 @@ func TestStreamTableLayoutFrozen(t *testing.T) {
 	}
 }
 
+func TestStreamTableLayoutFitsTerminalWidth(t *testing.T) {
+	prevWidth := width
+	width = 80
+	t.Cleanup(func() { width = prevWidth })
+
+	headers := []string{
+		"LLM Model", "Params", "Context", "Creator", "SWE-bench Verified",
+		"Terminal-Bench Hard", "Terminal-Bench 2.0", "τ²-Bench Telecom",
+		"BrowseComp", "AIME 2025", "GPQA Diamond", "LiveCodeBench",
+		"HLE", "AA Intelligence Index", "AA Coding Index",
+	}
+	layouts := newStreamTableLayouts()
+	widths := layouts.layout(0, headers)
+	table := formatFixedWidthTable(headers, widths, [][]string{{"value"}})
+	for _, line := range strings.Split(strings.TrimSuffix(table, "\n"), "\n") {
+		if got := runewidth.StringWidth(line); got > int(width) {
+			t.Fatalf("expected table line width <= terminal width (%d), got %d: %q", width, got, line)
+		}
+	}
+}
+
 func TestPreprocessBuffersLastStreamingRow(t *testing.T) {
 	layouts := newStreamTableLayouts()
 
